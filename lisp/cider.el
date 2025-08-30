@@ -239,6 +239,27 @@ By default we favor the project-specific shadow-cljs over the system-wide."
   :safe #'stringp
   :package-version '(cider . "1.14.0"))
 
+(defcustom cider-clr-command
+  "cljr"
+  "The command used to execute ClojureCLR."
+  :type 'string
+  :safe #'stringp
+  :package-version '(cider . "1.20.0"))
+
+(defcustom cider-clr-parameters
+  "-X clojure.tools.nrepl/start-server!"
+  "Params passed to ClojureCLR to start an nREPL server via `cider-jack-in'."
+  :type 'string
+  :safe #'stringp
+  :package-version '(cider . "1.20.0"))
+
+(defcustom cider-clr-nrepl-sha "a6bf822a5f72ec613f703eaf95420758591f2437"
+  "The version of clr.tools.nrepl injected on jack-in with ClojureCLR."
+  ;; Unlike Maven, GitHub tags are not supported by Clojure
+  :type 'string
+  :safe #'stringp
+  :package-version '(cider . "1.20.0"))
+
 (defcustom cider-jack-in-default nil
   "The default tool to use when doing `cider-jack-in' outside a project.
 This value is consulted when no identifying file types (e.g. project.clj
@@ -254,7 +275,8 @@ explicitly to skip the auto-detection."
                  (const gradle)
                  (const babashka)
                  (const nbb)
-                 (const basilisp))
+                 (const basilisp)
+                 (const clr))
   :safe #'symbolp
   :package-version '(cider . "0.9.0"))
 
@@ -274,6 +296,7 @@ command when there is no ambiguity."
                  (const babashka)
                  (const nbb)
                  (const basilisp)
+                 (const clr)
                  (const :tag "Always ask" nil))
   :safe #'symbolp
   :package-version '(cider . "0.13.0"))
@@ -757,6 +780,30 @@ Does so by concatenating PARAMS and DEPENDENCIES."
      " "
      params)))
 
+(defun cider-clr-jack-in-dependencies (params dependencies &optional command)
+  "Create ClojureCLR clr.core.cli jack-in dependencies.
+Does so by concatenating DEPENDENCIES, and PARAMS into a
+suitable `cljr` invocation and quoting, also accounting for COMMAND if
+provided."
+  (let* ((all-deps (thread-last dependencies
+                                (cider--dedupe-deps)
+                                (seq-map (lambda (dep)
+                                           (if (listp (cadr dep))
+                                               (format "%s {%s}"
+                                                       (car dep)
+                                                       (seq-reduce
+                                                        (lambda (acc v)
+                                                          (concat acc (format " :%s \"%s\" " (car v) (cdr v))))
+                                                        (cadr dep)
+                                                        ""))
+                                             (format "%s {:git/sha \"%s\"}" (car dep) (cadr dep)))))))
+         (deps (format "{:deps {%s}}"
+                       (string-join all-deps " ")))
+         (deps-quoted (cider--shell-quote-argument deps command)))
+    (format "-Sdeps %s %s"
+            deps-quoted
+            (if params (format " %s" params) ""))))
+
 (defun cider-add-clojure-dependencies-maybe (dependencies)
   "Return DEPENDENCIES with an added Clojure dependency if requested.
 See also `cider-jack-in-auto-inject-clojure'."
@@ -815,6 +862,12 @@ COMMAND is the resolved jack-in command, used to handle PowerShell quoting."
    params
    (cider-add-clojure-dependencies-maybe cider-jack-in-dependencies)
    (cider-jack-in-normalized-nrepl-middlewares)))
+
+(defun cider--clr-inject-deps (params _project-type _command)
+  "Inject CIDER deps into PARAMS for a Gradle project."
+  (cider-clr-jack-in-dependencies
+   params
+   `(("io.github.clojure/clr.tools.nrepl" ,cider-clr-nrepl-sha))))
 
 (defun cider-inject-jack-in-dependencies (params project-type &optional command)
   "Return PARAMS with injected REPL dependencies for PROJECT-TYPE.
@@ -880,6 +933,16 @@ with its nREPL middleware and dependencies."
                              :params-var 'cider-basilisp-parameters
                              :project-files '("basilisp.edn")
                              :universal-prefix-arg 5)
+
+(cider-register-jack-in-tool 'clr
+                             :command-var 'cider-clr-command
+                             :params-var 'cider-clr-parameters
+                             :project-files '("deps-clr.edn")
+                             :resolver #'cider--resolve-prefix-command
+                             :universal-prefix-arg 6
+                             :jack-in-type 'clj
+                             :cljs-repl-type 'nbb
+                             :inject-fn #'cider--clr-inject-deps)
 
 
 ;;; ClojureScript REPL creation

@@ -32,17 +32,21 @@ jobs:
         os: [ubuntu-latest]
         emacs_version: ['28.2', '29.3', '30.1']
         java_version: ['21']
+        dotnet_version: ['10.0.300']
         include:
           # For other OSes, test only the latest stable Emacs version.
           - os: macos-latest # aarch64
             emacs_version: '30.1'
             java_version: '21'
+            dotnet_version: '10.0.300'
           - os: macos-15 # x64
             emacs_version: '30.1'
             java_version: '21'
+            dotnet_version: '10.0.300'
           - os: windows-latest
             emacs_version: '30.1'
             java_version: '21'
+            dotnet_version: '10.0.300'
 
     steps:
     - name: Set up Emacs
@@ -108,6 +112,16 @@ jobs:
         python-version: '3.12'
     - run: |
         pip install basilisp==0.5.0
+
+    - name: Prepare dotnet
+      uses: xt0rted/setup-dotnet@v1.5.0
+      with:
+        dotnet-version: ${{matrix.dotnet_version}}
+
+    - name: Prepare ClojureCLR
+      run: |
+        dotnet tool install --global Clojure.Main --version 1.12.3-alpha8
+        dotnet tool install --global Clojure.Cljr --version 0.1.0-alpha11
 
     - name: Test integration
       run: |
